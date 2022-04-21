@@ -1,0 +1,154 @@
+#include <ModbusSlave.h>
+#include <time.h>
+#include <stdlib.h>
+
+#define SLAVE_ID 1           // The Modbus slave ID, change to the ID you want to use.
+#define RS485_CTRL_PIN 8     // Change to the pin the RE/DE pin of the RS485 controller is connected to.
+#define SERIAL_BAUDRATE 9600 // Change to the baudrate you want to use for Modbus communication.
+#define SERIAL_PORT Serial   // Serial port to use for RS485 communication, change to the port you're using.
+
+// The position in the array determines the address. Position 0 will correspond to Coil, Discrete input or Input register 0.
+uint8_t digital_pins[] = {4, 7, 9, 12, LED_BUILTIN}; // Add the pins.
+
+uint8_t digital_pins_size = sizeof(digital_pins) / sizeof(digital_pins[0]); // Get the size of the digital_pins array.
+
+//define pins name.
+#define LED1 digital_pins[0]
+#define LED2 digital_pins[1]
+#define IO1 digital_pins[2]
+#define IO2 digital_pins[3]
+
+uint8_t regsize = 30;
+uint8_t LED_blink = 0;
+uint8_t reset_val = 0;
+uint8_t num = 0;
+int ledState = LOW;
+unsigned long ledStarted = 0;
+unsigned long resetStarted = 0;
+unsigned long LEDtime = 500;
+unsigned long RESETtime = 1000;
+
+// Modbus object declaration
+Modbus slave(SERIAL_PORT, SLAVE_ID, RS485_CTRL_PIN);
+
+void setup()
+{
+  // Set the defined digital pins to the value stored.
+  for (uint16_t i = 0; i < digital_pins_size; i++)
+  {
+    pinMode(digital_pins[i], OUTPUT);
+  }
+
+  // Register functions to call when a certain function code is received.
+  slave.cbVector[CB_READ_HOLDING_REGISTERS] = readMemory;
+  slave.cbVector[CB_WRITE_HOLDING_REGISTERS] = writeMemory;
+
+  // Set the serial port and slave to the given baudrate.
+  SERIAL_PORT.begin(SERIAL_BAUDRATE);
+  slave.begin(SERIAL_BAUDRATE);
+}
+
+void loop()
+{
+  slave.poll();
+
+  //LED2 blink if the value is 3 at address 0x16.
+  if (LED_blink == 3) {
+    unsigned long ntime = millis();
+    if (ntime - ledStarted >= LEDtime) {
+      ledStarted = ntime;
+      if (ledState == LOW) {
+        ledState = HIGH;
+      } else {
+        ledState = LOW;
+      }
+      digitalWrite(LED_BUILTIN, ledState);
+    }
+  } /*else {
+    digitalWrite(LED_BUILTIN, LOW);
+  }*/
+
+  //IO2 state change to high after 1000ms when value is not 0 at address 0x17.
+  if (reset_val != 0) {
+    unsigned long time_now = millis();
+    if (time_now - resetStarted >= RESETtime) {
+      digitalWrite(LED_BUILTIN, HIGH);
+      reset_val = 0;
+    }
+  }
+}
+
+// Handle the function code Read Holding Registers (FC=03) and write back the values from the EEPROM (holding registers).
+uint8_t readMemory(uint8_t fc, uint16_t address, uint16_t length)
+{
+  for (int i = 0; i < length; i++)
+  {
+    if (address + i == 0x18)
+    {
+      slave.writeRegisterToBuffer(i, num);
+      return STATUS_OK;
+    } else {
+      return STATUS_ILLEGAL_DATA_ADDRESS;
+    }
+  }
+}
+
+// Handle the function codes Write Holding Register(s) (FC=06, FC=16) and write data to the eeprom.
+uint8_t writeMemory(uint8_t fc, uint16_t address, uint16_t length)
+{
+  for (int i = 0; i < length; i++)
+  {
+    if (address + i <= regsize)
+    {
+      //check the support address for function code.
+      if (address + i < 0x16 || address + i > 0x19 || address + i == 0x18)
+      {
+        return STATUS_ILLEGAL_DATA_ADDRESS;
+      }
+      // Read the value from the input buffer.
+      uint8_t value = slave.readRegisterFromBuffer(i);
+
+      if (address + i == 0x16) {
+        LED_blink = value;
+        if (value == 1) {
+          digitalWrite(LED1, HIGH);
+          digitalWrite(LED2, LOW);
+        }
+        if (value == 2) {
+          digitalWrite(LED1, LOW);
+          digitalWrite(LED2, HIGH);
+        }
+        if (value == 3) {
+          digitalWrite(LED1, LOW);
+        }
+      }
+      
+      if (address + i == 0x17) {
+        if (value == 1) {
+          digitalWrite(IO1, LOW);
+          digitalWrite(LED_BUILTIN, LOW);
+          reset_val = value;
+          resetStarted = millis();
+        }
+        if (value == 2) {
+          digitalWrite(IO1, HIGH);
+          digitalWrite(LED_BUILTIN, LOW);
+          reset_val = value;
+          resetStarted = millis();
+        }
+      }
+      
+      if (address + i == 0x19) {
+        if (value == 1) {
+          func();
+        }
+      }
+    }
+  }
+
+  return STATUS_OK;
+}
+
+void func() {
+  num = num + 1;
+}
