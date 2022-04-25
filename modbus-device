@@ -10,15 +10,15 @@
 #define SERIAL_PORT Serial   // Serial port to use for RS485 communication, change to the port you're using.
 
 //define pins name.
-#define LED1 4
-#define LED2 7
-#define IO1 9
-#define IO2 12
-#define SDA A4
-#define SCL A5
+#define LED1 5
+#define LED2 4
+#define SOP 7
+#define RST 6
+#define SDA 2
+#define SCL 3
 
 // The position in the array determines the address. Position 0 will correspond to Coil, Discrete input or Input register 0.
-uint8_t digital_pins[] = {LED1, LED2, IO1, IO2, LED_BUILTIN}; // Add the pins.
+uint8_t digital_pins[] = {LED1, LED2, SOP, RST}; // Add the pins.
 uint8_t i2c_pins[] = {SDA, SCL}; //Add the pins
 
 uint8_t digital_pins_size = sizeof(digital_pins) / sizeof(digital_pins[0]); // Get the size of the digital_pins array.
@@ -76,17 +76,15 @@ void loop()
       } else {
         ledState = LOW;
       }
-      digitalWrite(LED_BUILTIN, ledState);
+      digitalWrite(LED2, ledState);
     }
-  } /*else {
-    digitalWrite(LED_BUILTIN, LOW);
-  }*/
+  }
 
   //IO2 state change to high after 1000ms when value is not 0 at address 0x17.
   if (reset_val != 0) {
     unsigned long time_now = millis();
     if (time_now - resetStarted >= RESET_period) {
-      digitalWrite(LED_BUILTIN, HIGH);
+      digitalWrite(RST, HIGH);
       reset_val = 0;
     }
   }
@@ -139,14 +137,14 @@ uint8_t writeMemory(uint8_t fc, uint16_t address, uint16_t length)
       
       if (address + i == 0x17) {
         if (value == 1) {
-          digitalWrite(IO1, LOW);
-          digitalWrite(LED_BUILTIN, LOW);
+          digitalWrite(SOP, LOW);
+          digitalWrite(RST, LOW);
           reset_val = value;
           resetStarted = millis();
         }
         if (value == 2) {
-          digitalWrite(IO1, HIGH);
-          digitalWrite(LED_BUILTIN, LOW);
+          digitalWrite(SOP, HIGH);
+          digitalWrite(RST, LOW);
           reset_val = value;
           resetStarted = millis();
         }
